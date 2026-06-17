@@ -26,6 +26,7 @@ import type {
   CareTask,
   Plant,
   PlantScanResult,
+  RecipeProfile,
   RecipeRecommendation,
   TabKey,
 } from './src/types';
@@ -54,6 +55,16 @@ type PlantDraft = {
   skillLevel: 'easy' | 'medium' | 'advanced';
   waterEveryDays: string;
   light: string;
+};
+
+type RecipeProfileDraft = {
+  allergies: string;
+  availableIngredients: string;
+  cuisines: string;
+  dietaryPreferences: string;
+  dislikes: string;
+  mealType: string;
+  skillLevel: 'easy' | 'medium' | 'advanced';
 };
 
 const STORAGE_KEY = 'eden-mobile:v2';
@@ -90,6 +101,8 @@ export default function App() {
   const [recipes, setRecipes] = useState(initialState.recipes);
   const [scans, setScans] = useState(initialState.scans);
   const [aiBusy, setAiBusy] = useState(false);
+  const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  const [pendingPlantId, setPendingPlantId] = useState<string | null>(null);
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
   const [streak, setStreak] = useState(initialState.streak);
   const [hydrated, setHydrated] = useState(false);
@@ -209,6 +222,22 @@ export default function App() {
     setCompletedTasks([]);
   };
 
+  const updatePlantRecipeProfile = (
+    plantId: string,
+    draft: RecipeProfileDraft,
+  ) => {
+    setPlants((current) =>
+      current.map((plant) =>
+        plant.id === plantId
+          ? {
+              ...plant,
+              recipeProfile: recipeProfileFromDraft(draft),
+            }
+          : plant,
+      ),
+    );
+  };
+
   const capturePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
 
@@ -283,6 +312,12 @@ export default function App() {
       return;
     }
 
+    setPendingPlantId(plantId ?? plants[0]?.id ?? null);
+    setPendingPhotoUri(photoUri);
+    setActiveTab('log');
+  };
+
+  const submitPhotoForScan = async (plantId: string, photoUri: string) => {
     const plant = plants.find((item) => item.id === plantId) ?? plants[0];
 
     if (!plant) {
@@ -317,6 +352,8 @@ export default function App() {
       );
 
       await saveEntry(photoUri, scan, plant.id);
+      setPendingPhotoUri(null);
+      setPendingPlantId(null);
     } catch {
       Alert.alert('AI scan issue', 'Eden could not analyze this photo yet.');
     } finally {
@@ -354,6 +391,7 @@ export default function App() {
                 onAddPlant={addPlant}
                 onScanPlant={(plantId) => saveEntryWithPhoto(plantId)}
                 onSelectPlant={setSelectedPlantId}
+                onUpdateRecipeProfile={updatePlantRecipeProfile}
                 plants={plants}
                 recipes={recipes}
                 scans={scans}
@@ -364,7 +402,11 @@ export default function App() {
               <LogScreen
                 aiBusy={aiBusy}
                 entries={entries}
+                onRetakePhoto={() => saveEntryWithPhoto(pendingPlantId ?? undefined)}
                 onSavePhoto={() => saveEntryWithPhoto()}
+                onSubmitPhoto={submitPhotoForScan}
+                pendingPhotoUri={pendingPhotoUri}
+                pendingPlantId={pendingPlantId}
                 plants={plants}
                 recipes={recipes}
                 scans={scans}
@@ -433,6 +475,38 @@ function parseList(value: string) {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function recipeProfileFromDraft(draft: RecipeProfileDraft): RecipeProfile {
+  const cuisines = parseList(draft.cuisines);
+  const dietaryPreferences = parseList(draft.dietaryPreferences);
+  const availableIngredients = parseList(draft.availableIngredients);
+
+  return {
+    allergies: parseList(draft.allergies),
+    availableIngredients: availableIngredients.length
+      ? availableIngredients
+      : ['olive oil', 'lemon', 'salt'],
+    cuisines: cuisines.length ? cuisines : ['Mediterranean'],
+    dietaryPreferences: dietaryPreferences.length
+      ? dietaryPreferences
+      : ['vegetarian'],
+    dislikes: parseList(draft.dislikes),
+    mealType: draft.mealType.trim() || 'quick dinner',
+    skillLevel: draft.skillLevel,
+  };
+}
+
+function recipeProfileToDraft(profile: RecipeProfile): RecipeProfileDraft {
+  return {
+    allergies: profile.allergies.join(', '),
+    availableIngredients: profile.availableIngredients.join(', '),
+    cuisines: profile.cuisines.join(', '),
+    dietaryPreferences: profile.dietaryPreferences.join(', '),
+    dislikes: profile.dislikes.join(', '),
+    mealType: profile.mealType,
+    skillLevel: profile.skillLevel,
+  };
 }
 
 function normalizePlants(userPlants: Plant[]) {
@@ -594,6 +668,7 @@ function GardenScreen({
   onAddPlant,
   onScanPlant,
   onSelectPlant,
+  onUpdateRecipeProfile,
   plants,
   recipes,
   scans,
@@ -603,6 +678,7 @@ function GardenScreen({
   onAddPlant: (draft: PlantDraft) => void;
   onScanPlant: (plantId: string) => void;
   onSelectPlant: (plantId: string | null) => void;
+  onUpdateRecipeProfile: (plantId: string, draft: RecipeProfileDraft) => void;
   plants: Plant[];
   recipes: RecipeRecommendation[];
   scans: PlantScanResult[];
@@ -651,6 +727,9 @@ function GardenScreen({
           entries={entries.filter((entry) => entry.plantId === selectedPlant.id)}
           onBack={() => onSelectPlant(null)}
           onScan={() => onScanPlant(selectedPlant.id)}
+          onUpdateRecipeProfile={(draft) =>
+            onUpdateRecipeProfile(selectedPlant.id, draft)
+          }
           plant={selectedPlant}
           recipes={recipes}
           scans={scans.filter((scan) => scan.plantId === selectedPlant.id)}
@@ -763,34 +842,12 @@ function GardenScreen({
                 placeholder="cilantro, spicy food"
                 value={draft.dislikes}
               />
-              <View className="mt-4">
-                <Text className="mb-2 text-xs font-black uppercase text-[#8B741F]">
-                  Cooking skill
-                </Text>
-                <View className="flex-row gap-2">
-                  {(['easy', 'medium', 'advanced'] as const).map((skill) => (
-                    <Pressable
-                      key={skill}
-                      className={`flex-1 rounded-2xl px-3 py-4 ${
-                        draft.skillLevel === skill ? 'bg-[#36B657]' : 'bg-[#F8F3E8]'
-                      }`}
-                      onPress={() =>
-                        setDraft((current) => ({ ...current, skillLevel: skill }))
-                      }
-                    >
-                      <Text
-                        className={`text-center text-xs font-black uppercase ${
-                          draft.skillLevel === skill
-                            ? 'text-white'
-                            : 'text-[#756D5D]'
-                        }`}
-                      >
-                        {skill}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
+              <SkillPicker
+                onChange={(skillLevel) =>
+                  setDraft((current) => ({ ...current, skillLevel }))
+                }
+                value={draft.skillLevel}
+              />
               <PrimaryAction label="Save plant" onPress={savePlant} />
               <SecondaryAction label="Cancel" onPress={() => setAdding(false)} />
             </View>
@@ -821,20 +878,38 @@ function GardenScreen({
 function LogScreen({
   aiBusy,
   entries,
+  onRetakePhoto,
   onSavePhoto,
+  onSubmitPhoto,
+  pendingPhotoUri,
+  pendingPlantId,
   plants,
   recipes,
   scans,
 }: {
   aiBusy: boolean;
   entries: CareEntry[];
+  onRetakePhoto: () => void;
   onSavePhoto: () => void;
+  onSubmitPhoto: (plantId: string, photoUri: string) => void;
+  pendingPhotoUri: string | null;
+  pendingPlantId: string | null;
   plants: Plant[];
   recipes: RecipeRecommendation[];
   scans: PlantScanResult[];
 }) {
+  const [selectedLogPlantId, setSelectedLogPlantId] = useState(
+    pendingPlantId ?? plants[0]?.id ?? '',
+  );
+  useEffect(() => {
+    if (pendingPlantId) {
+      setSelectedLogPlantId(pendingPlantId);
+    }
+  }, [pendingPlantId]);
   const latest = entries[0];
   const plant = plants.find((item) => item.id === latest?.plantId) ?? plants[0];
+  const selectedPlant =
+    plants.find((item) => item.id === selectedLogPlantId) ?? plants[0];
   const latestScan =
     scans.find((scan) => scan.id === latest?.scanId) ?? scans[0];
   const latestRecipes = latestScan
@@ -849,12 +924,43 @@ function LogScreen({
         body="Snap a plant photo. Eden returns identification, care guidance, edible confidence, and recipes when it is ready."
       />
 
+      <View className="mt-5 rounded-[28px] border border-[#E2D8C2] bg-[#FFFDF7] p-4">
+        <Text className="text-xs font-black uppercase text-[#8B741F]">
+          Plant to scan
+        </Text>
+        <View className="mt-3 flex-row flex-wrap gap-2">
+          {plants.map((item) => (
+            <Pressable
+              key={item.id}
+              className={`rounded-2xl px-4 py-3 ${
+                selectedPlant?.id === item.id ? 'bg-[#36B657]' : 'bg-[#F8F3E8]'
+              }`}
+              onPress={() => setSelectedLogPlantId(item.id)}
+            >
+              <Text
+                className={`text-sm font-black ${
+                  selectedPlant?.id === item.id ? 'text-white' : 'text-[#756D5D]'
+                }`}
+              >
+                {item.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
       <Pressable
         className="mt-6 rounded-[32px] border-b-[6px] border-[#1D5F35] bg-[#36B657] p-5"
-        onPress={onSavePhoto}
+        onPress={() => onSavePhoto()}
       >
         <View className="h-64 items-center justify-center overflow-hidden rounded-[28px] bg-[#1D7C3B]">
-          {latest?.photoUri && !aiBusy ? (
+          {pendingPhotoUri && !aiBusy ? (
+            <Image
+              className="h-full w-full"
+              resizeMode="cover"
+              source={{ uri: pendingPhotoUri }}
+            />
+          ) : latest?.photoUri && !aiBusy ? (
             <Image
               className="h-full w-full"
               resizeMode="cover"
@@ -879,6 +985,22 @@ function LogScreen({
           )}
         </View>
       </Pressable>
+
+      {pendingPhotoUri ? (
+        <View className="mt-4 flex-row gap-3">
+          <View className="flex-1">
+            <SecondaryAction label="Retake" onPress={onRetakePhoto} />
+          </View>
+          <View className="flex-1">
+            <PrimaryAction
+              label={aiBusy ? 'Scanning...' : 'Use photo'}
+              onPress={() =>
+                selectedPlant && onSubmitPhoto(selectedPlant.id, pendingPhotoUri)
+              }
+            />
+          </View>
+        </View>
+      ) : null}
 
       {latestScan ? (
         <ScanResultCard scan={latestScan} />
@@ -910,7 +1032,12 @@ function LogScreen({
         </View>
       ) : null}
 
-      <PrimaryAction label={aiBusy ? 'Scanning...' : 'Scan with AI'} onPress={onSavePhoto} />
+      {!pendingPhotoUri ? (
+        <PrimaryAction
+          label={aiBusy ? 'Scanning...' : 'Capture scan photo'}
+          onPress={() => onSavePhoto()}
+        />
+      ) : null}
     </View>
   );
 }
@@ -1094,6 +1221,7 @@ function PlantDetailScreen({
   entries,
   onBack,
   onScan,
+  onUpdateRecipeProfile,
   plant,
   recipes,
   scans,
@@ -1101,6 +1229,7 @@ function PlantDetailScreen({
   entries: CareEntry[];
   onBack: () => void;
   onScan: () => void;
+  onUpdateRecipeProfile: (draft: RecipeProfileDraft) => void;
   plant: Plant;
   recipes: RecipeRecommendation[];
   scans: PlantScanResult[];
@@ -1109,6 +1238,10 @@ function PlantDetailScreen({
   const plantRecipes = latestScan
     ? recipes.filter((recipe) => recipe.scanId === latestScan.id)
     : [];
+  const [editingRecipe, setEditingRecipe] = useState(false);
+  const [recipeDraft, setRecipeDraft] = useState(() =>
+    recipeProfileToDraft(plant.recipeProfile),
+  );
 
   return (
     <View>
@@ -1145,7 +1278,26 @@ function PlantDetailScreen({
         </View>
       </View>
 
-      <RecipeProfileCard plant={plant} scan={latestScan} />
+      {editingRecipe ? (
+        <RecipeProfileEditor
+          draft={recipeDraft}
+          onCancel={() => {
+            setRecipeDraft(recipeProfileToDraft(plant.recipeProfile));
+            setEditingRecipe(false);
+          }}
+          onChange={setRecipeDraft}
+          onSave={() => {
+            onUpdateRecipeProfile(recipeDraft);
+            setEditingRecipe(false);
+          }}
+        />
+      ) : (
+        <RecipeProfileCard
+          onEdit={() => setEditingRecipe(true)}
+          plant={plant}
+          scan={latestScan}
+        />
+      )}
 
       <PrimaryAction label="Run AI scan" onPress={onScan} />
 
@@ -1279,9 +1431,11 @@ function PlantRow({
 }
 
 function RecipeProfileCard({
+  onEdit,
   plant,
   scan,
 }: {
+  onEdit: () => void;
   plant: Plant;
   scan?: PlantScanResult;
 }) {
@@ -1320,6 +1474,110 @@ function RecipeProfileCard({
           Avoiding: {[...profile.allergies, ...profile.dislikes].join(', ')}
         </Text>
       ) : null}
+
+      {!ready ? <FutureMealPaths profile={profile} /> : null}
+
+      <SecondaryAction label="Edit recipe profile" onPress={onEdit} />
+    </View>
+  );
+}
+
+function FutureMealPaths({ profile }: { profile: RecipeProfile }) {
+  const cuisine = profile.cuisines[0] ?? 'Seasonal';
+  const mealType = profile.mealType || 'meal';
+  const diet = profile.dietaryPreferences[0] ?? 'fresh';
+  const paths = [
+    `${cuisine} ${mealType} path`,
+    `${diet} harvest bowl path`,
+    `${profile.skillLevel} pantry-friendly path`,
+  ];
+
+  return (
+    <View className="mt-5 gap-3">
+      <Text className="text-xs font-black uppercase text-[#8B741F]">
+        Locked meal paths
+      </Text>
+      {paths.map((path) => (
+        <View key={path} className="rounded-2xl bg-[#F8F3E8] p-4">
+          <View className="flex-row items-center justify-between gap-3">
+            <Text className="flex-1 text-base font-black text-[#183B27]">
+              {path}
+            </Text>
+            <Text className="text-xs font-black uppercase text-[#8B741F]">
+              locked
+            </Text>
+          </View>
+          <Text className="mt-1 text-sm font-bold text-[#756D5D]">
+            Opens when the crop is identified, edible, and harvest-ready.
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function RecipeProfileEditor({
+  draft,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  draft: RecipeProfileDraft;
+  onCancel: () => void;
+  onChange: (draft: RecipeProfileDraft) => void;
+  onSave: () => void;
+}) {
+  return (
+    <View className="mt-5 rounded-[28px] border border-[#E2D8C2] bg-[#FFFDF7] p-5">
+      <Text className="text-2xl font-black text-[#183B27]">
+        Edit recipe profile
+      </Text>
+      <Input
+        label="Favorite cuisines"
+        onChangeText={(cuisines) => onChange({ ...draft, cuisines })}
+        placeholder="Mediterranean, Mexican"
+        value={draft.cuisines}
+      />
+      <Input
+        label="Dietary preferences"
+        onChangeText={(dietaryPreferences) =>
+          onChange({ ...draft, dietaryPreferences })
+        }
+        placeholder="vegetarian, gluten-free"
+        value={draft.dietaryPreferences}
+      />
+      <Input
+        label="Allergies"
+        onChangeText={(allergies) => onChange({ ...draft, allergies })}
+        placeholder="nuts, dairy"
+        value={draft.allergies}
+      />
+      <Input
+        label="Pantry staples"
+        onChangeText={(availableIngredients) =>
+          onChange({ ...draft, availableIngredients })
+        }
+        placeholder="olive oil, lemon, rice"
+        value={draft.availableIngredients}
+      />
+      <Input
+        label="Meal type"
+        onChangeText={(mealType) => onChange({ ...draft, mealType })}
+        placeholder="quick dinner"
+        value={draft.mealType}
+      />
+      <Input
+        label="Dislikes"
+        onChangeText={(dislikes) => onChange({ ...draft, dislikes })}
+        placeholder="cilantro, spicy food"
+        value={draft.dislikes}
+      />
+      <SkillPicker
+        onChange={(skillLevel) => onChange({ ...draft, skillLevel })}
+        value={draft.skillLevel}
+      />
+      <PrimaryAction label="Save preferences" onPress={onSave} />
+      <SecondaryAction label="Cancel" onPress={onCancel} />
     </View>
   );
 }
@@ -1604,6 +1862,41 @@ function Input({
             {suffix}
           </Text>
         ) : null}
+      </View>
+    </View>
+  );
+}
+
+function SkillPicker({
+  onChange,
+  value,
+}: {
+  onChange: (value: RecipeProfileDraft['skillLevel']) => void;
+  value: RecipeProfileDraft['skillLevel'];
+}) {
+  return (
+    <View className="mt-4">
+      <Text className="mb-2 text-xs font-black uppercase text-[#8B741F]">
+        Cooking skill
+      </Text>
+      <View className="flex-row gap-2">
+        {(['easy', 'medium', 'advanced'] as const).map((skill) => (
+          <Pressable
+            key={skill}
+            className={`flex-1 rounded-2xl px-3 py-4 ${
+              value === skill ? 'bg-[#36B657]' : 'bg-[#F8F3E8]'
+            }`}
+            onPress={() => onChange(skill)}
+          >
+            <Text
+              className={`text-center text-xs font-black uppercase ${
+                value === skill ? 'text-white' : 'text-[#756D5D]'
+              }`}
+            >
+              {skill}
+            </Text>
+          </Pressable>
+        ))}
       </View>
     </View>
   );
