@@ -19,7 +19,17 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Eden uses the camera to save daily plant care proof.",
+          "photosPermission": "Eden uses your photos when you attach plant progress images."
+        }
+      ]
+    ]
   }
 }
