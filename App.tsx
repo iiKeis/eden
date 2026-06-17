@@ -78,6 +78,45 @@ const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'profile', label: 'Profile', icon: 'U' },
 ];
 
+const cuisineOptions = [
+  'Mediterranean',
+  'Italian',
+  'Mexican',
+  'Korean',
+  'Indian',
+  'Thai',
+  'French',
+  'Caribbean',
+];
+const dietaryOptions = [
+  'vegetarian',
+  'vegan',
+  'gluten-free',
+  'dairy-free',
+  'low-carb',
+  'high-protein',
+];
+const allergyOptions = ['nuts', 'dairy', 'eggs', 'soy', 'sesame', 'shellfish'];
+const pantryOptions = [
+  'olive oil',
+  'lemon',
+  'salt',
+  'rice',
+  'toast',
+  'yogurt',
+  'garlic',
+  'vinegar',
+];
+const mealTypeOptions = [
+  'quick dinner',
+  'lunch',
+  'snack',
+  'salad',
+  'sauce',
+  'drink',
+];
+const dislikeOptions = ['cilantro', 'spicy food', 'onion', 'garlic', 'dairy', 'mushrooms'];
+
 const initialState: EdenState = {
   completedTasks: [],
   entries: seedEntries,
@@ -794,52 +833,53 @@ function GardenScreen({
                 Eden shapes recipe ideas while the crop grows, then unlocks the
                 final recommendation only when the crop is edible and harvest-ready.
               </Text>
-              <Input
+              <PreferenceChips
                 label="Favorite cuisines"
-                onChangeText={(cuisines) =>
+                onChange={(cuisines) =>
                   setDraft((current) => ({ ...current, cuisines }))
                 }
-                placeholder="Mediterranean, Mexican"
+                options={cuisineOptions}
                 value={draft.cuisines}
               />
-              <Input
+              <PreferenceChips
                 label="Dietary preferences"
-                onChangeText={(dietaryPreferences) =>
+                onChange={(dietaryPreferences) =>
                   setDraft((current) => ({ ...current, dietaryPreferences }))
                 }
-                placeholder="vegetarian, gluten-free"
+                options={dietaryOptions}
                 value={draft.dietaryPreferences}
               />
-              <Input
+              <PreferenceChips
                 label="Allergies"
-                onChangeText={(allergies) =>
+                onChange={(allergies) =>
                   setDraft((current) => ({ ...current, allergies }))
                 }
-                placeholder="nuts, dairy"
+                options={allergyOptions}
                 value={draft.allergies}
               />
-              <Input
+              <PreferenceChips
                 label="Pantry staples"
-                onChangeText={(availableIngredients) =>
+                onChange={(availableIngredients) =>
                   setDraft((current) => ({ ...current, availableIngredients }))
                 }
-                placeholder="olive oil, lemon, rice"
+                options={pantryOptions}
                 value={draft.availableIngredients}
               />
-              <Input
+              <PreferenceChips
                 label="Meal type"
-                onChangeText={(mealType) =>
+                mode="single"
+                onChange={(mealType) =>
                   setDraft((current) => ({ ...current, mealType }))
                 }
-                placeholder="quick dinner"
+                options={mealTypeOptions}
                 value={draft.mealType}
               />
-              <Input
+              <PreferenceChips
                 label="Dislikes"
-                onChangeText={(dislikes) =>
+                onChange={(dislikes) =>
                   setDraft((current) => ({ ...current, dislikes }))
                 }
-                placeholder="cilantro, spicy food"
+                options={dislikeOptions}
                 value={draft.dislikes}
               />
               <SkillPicker
@@ -1532,44 +1572,45 @@ function RecipeProfileEditor({
       <Text className="text-2xl font-black text-[#183B27]">
         Edit recipe profile
       </Text>
-      <Input
+      <PreferenceChips
         label="Favorite cuisines"
-        onChangeText={(cuisines) => onChange({ ...draft, cuisines })}
-        placeholder="Mediterranean, Mexican"
+        onChange={(cuisines) => onChange({ ...draft, cuisines })}
+        options={cuisineOptions}
         value={draft.cuisines}
       />
-      <Input
+      <PreferenceChips
         label="Dietary preferences"
-        onChangeText={(dietaryPreferences) =>
+        onChange={(dietaryPreferences) =>
           onChange({ ...draft, dietaryPreferences })
         }
-        placeholder="vegetarian, gluten-free"
+        options={dietaryOptions}
         value={draft.dietaryPreferences}
       />
-      <Input
+      <PreferenceChips
         label="Allergies"
-        onChangeText={(allergies) => onChange({ ...draft, allergies })}
-        placeholder="nuts, dairy"
+        onChange={(allergies) => onChange({ ...draft, allergies })}
+        options={allergyOptions}
         value={draft.allergies}
       />
-      <Input
+      <PreferenceChips
         label="Pantry staples"
-        onChangeText={(availableIngredients) =>
+        onChange={(availableIngredients) =>
           onChange({ ...draft, availableIngredients })
         }
-        placeholder="olive oil, lemon, rice"
+        options={pantryOptions}
         value={draft.availableIngredients}
       />
-      <Input
+      <PreferenceChips
         label="Meal type"
-        onChangeText={(mealType) => onChange({ ...draft, mealType })}
-        placeholder="quick dinner"
+        mode="single"
+        onChange={(mealType) => onChange({ ...draft, mealType })}
+        options={mealTypeOptions}
         value={draft.mealType}
       />
-      <Input
+      <PreferenceChips
         label="Dislikes"
-        onChangeText={(dislikes) => onChange({ ...draft, dislikes })}
-        placeholder="cilantro, spicy food"
+        onChange={(dislikes) => onChange({ ...draft, dislikes })}
+        options={dislikeOptions}
         value={draft.dislikes}
       />
       <SkillPicker
@@ -1579,6 +1620,105 @@ function RecipeProfileEditor({
       <PrimaryAction label="Save preferences" onPress={onSave} />
       <SecondaryAction label="Cancel" onPress={onCancel} />
     </View>
+  );
+}
+
+function PreferenceChips({
+  label,
+  mode = 'multi',
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  mode?: 'multi' | 'single';
+  onChange: (value: string) => void;
+  options: string[];
+  value: string;
+}) {
+  const selected = parseList(value);
+
+  const toggle = (option: string) => {
+    if (mode === 'single') {
+      onChange(option);
+      return;
+    }
+
+    const next = selected.includes(option)
+      ? selected.filter((item) => item !== option)
+      : [...selected, option];
+
+    onChange(next.join(', '));
+  };
+
+  return (
+    <View className="mt-5">
+      <Text className="mb-3 text-xs font-black uppercase text-[#8B741F]">
+        {label}
+      </Text>
+      <View className="flex-row flex-wrap gap-2">
+        {options.map((option) => (
+          <AnimatedChip
+            key={option}
+            label={option}
+            onPress={() => toggle(option)}
+            selected={selected.includes(option)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function AnimatedChip({
+  label,
+  onPress,
+  selected,
+}: {
+  label: string;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  const scale = useRef(new Animated.Value(selected ? 1.04 : 1)).current;
+  const lift = useRef(new Animated.Value(selected ? -2 : 0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scale, {
+        friction: 5,
+        tension: 140,
+        toValue: selected ? 1.04 : 1,
+        useNativeDriver: true,
+      }),
+      Animated.spring(lift, {
+        friction: 6,
+        tension: 120,
+        toValue: selected ? -2 : 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [lift, scale, selected]);
+
+  return (
+    <Pressable onPress={onPress}>
+      <Animated.View style={{ transform: [{ translateY: lift }, { scale }] }}>
+        <View
+          className={`rounded-2xl border-b-[4px] px-4 py-3 ${
+            selected
+              ? 'border-[#1D5F35] bg-[#36B657]'
+              : 'border-[#D6CCB8] bg-[#F8F3E8]'
+          }`}
+        >
+          <Text
+            className={`text-sm font-black ${
+              selected ? 'text-white' : 'text-[#756D5D]'
+            }`}
+          >
+            {label}
+          </Text>
+        </View>
+      </Animated.View>
+    </Pressable>
   );
 }
 
