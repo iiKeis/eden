@@ -61,9 +61,11 @@ const knownPlants: Record<
 };
 
 export async function analyzePlantImage({
+  imageBase64,
   imageUri,
   plant,
 }: {
+  imageBase64?: string;
   imageUri: string;
   plant: Plant;
 }): Promise<PlantScanResult> {
@@ -92,6 +94,8 @@ export async function analyzePlantImage({
     scientificName: profile.scientificName,
     confidence,
     confidenceLevel: confidence >= 0.8 ? 'high' : confidence >= 0.65 ? 'medium' : 'low',
+    isPlantImage: true,
+    plantImageConfidence: imageBase64 ? 0.75 : 0.6,
     edibleStatus: profile.edibleStatus,
     edibleConfidence,
     harvestStatus: profile.harvestStatus,
@@ -135,6 +139,7 @@ export async function recommendRecipes({
   await wait(700);
 
   if (
+    scan.isPlantImage !== true ||
     scan.edibleStatus !== 'edible' ||
     scan.confidence < 0.9 ||
     scan.edibleConfidence < 0.85 ||

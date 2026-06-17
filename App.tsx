@@ -67,6 +67,11 @@ type RecipeProfileDraft = {
   skillLevel: 'easy' | 'medium' | 'advanced';
 };
 
+type CapturedPhoto = {
+  base64?: string;
+  uri: string;
+};
+
 const STORAGE_KEY = 'eden-mobile:v2';
 const today = new Date().toISOString().slice(0, 10);
 
@@ -141,6 +146,7 @@ export default function App() {
   const [scans, setScans] = useState(initialState.scans);
   const [aiBusy, setAiBusy] = useState(false);
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  const [pendingPhotoBase64, setPendingPhotoBase64] = useState<string | null>(null);
   const [pendingPlantId, setPendingPlantId] = useState<string | null>(null);
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
   const [streak, setStreak] = useState(initialState.streak);
@@ -288,6 +294,7 @@ export default function App() {
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [4, 5],
+      base64: true,
       quality: 0.85,
     });
 
@@ -295,7 +302,16 @@ export default function App() {
       return undefined;
     }
 
-    return result.assets[0]?.uri;
+    const asset = result.assets[0];
+
+    if (!asset?.uri) {
+      return undefined;
+    }
+
+    return {
+      base64: asset.base64,
+      uri: asset.uri,
+    };
   };
 
   const saveEntry = async (
@@ -345,18 +361,23 @@ export default function App() {
   };
 
   const saveEntryWithPhoto = async (plantId?: string) => {
-    const photoUri = await capturePhoto();
+    const photo = await capturePhoto();
 
-    if (!photoUri) {
+    if (!photo) {
       return;
     }
 
     setPendingPlantId(plantId ?? plants[0]?.id ?? null);
-    setPendingPhotoUri(photoUri);
+    setPendingPhotoBase64(photo.base64 ?? null);
+    setPendingPhotoUri(photo.uri);
     setActiveTab('log');
   };
 
-  const submitPhotoForScan = async (plantId: string, photoUri: string) => {
+  const submitPhotoForScan = async (
+    plantId: string,
+    photoUri: string,
+    imageBase64?: string,
+  ) => {
     const plant = plants.find((item) => item.id === plantId) ?? plants[0];
 
     if (!plant) {
@@ -367,7 +388,7 @@ export default function App() {
     setAiBusy(true);
 
     try {
-      const { scan } = await scanPlant({ imageUri: photoUri, plant });
+      const { scan } = await scanPlant({ imageBase64, imageUri: photoUri, plant });
       const { recipes: nextRecipes } = await getRecipeRecommendations({ plant, scan });
 
       setScans((current) => [scan, ...current]);
@@ -391,6 +412,7 @@ export default function App() {
       );
 
       await saveEntry(photoUri, scan, plant.id);
+      setPendingPhotoBase64(null);
       setPendingPhotoUri(null);
       setPendingPlantId(null);
     } catch {
@@ -444,6 +466,7 @@ export default function App() {
                 onRetakePhoto={() => saveEntryWithPhoto(pendingPlantId ?? undefined)}
                 onSavePhoto={() => saveEntryWithPhoto()}
                 onSubmitPhoto={submitPhotoForScan}
+                pendingPhotoBase64={pendingPhotoBase64}
                 pendingPhotoUri={pendingPhotoUri}
                 pendingPlantId={pendingPlantId}
                 plants={plants}
@@ -921,6 +944,7 @@ function LogScreen({
   onRetakePhoto,
   onSavePhoto,
   onSubmitPhoto,
+  pendingPhotoBase64,
   pendingPhotoUri,
   pendingPlantId,
   plants,
@@ -931,7 +955,12 @@ function LogScreen({
   entries: CareEntry[];
   onRetakePhoto: () => void;
   onSavePhoto: () => void;
-  onSubmitPhoto: (plantId: string, photoUri: string) => void;
+  onSubmitPhoto: (
+    plantId: string,
+    photoUri: string,
+    imageBase64?: string,
+  ) => void;
+  pendingPhotoBase64: string | null;
   pendingPhotoUri: string | null;
   pendingPlantId: string | null;
   plants: Plant[];
@@ -1035,7 +1064,12 @@ function LogScreen({
             <PrimaryAction
               label={aiBusy ? 'Scanning...' : 'Use photo'}
               onPress={() =>
-                selectedPlant && onSubmitPhoto(selectedPlant.id, pendingPhotoUri)
+                selectedPlant &&
+                onSubmitPhoto(
+                  selectedPlant.id,
+                  pendingPhotoUri,
+                  pendingPhotoBase64 ?? undefined,
+                )
               }
             />
           </View>
@@ -1724,6 +1758,7 @@ function AnimatedChip({
 
 function ScanResultCard({ scan }: { scan: PlantScanResult }) {
   const confidenceLabel = `${Math.round(scan.confidence * 100)}%`;
+  const plantImageLabel = `${Math.round(scan.plantImageConfidence * 100)}%`;
   const edibleLabel =
     scan.edibleStatus === 'edible'
       ? `${Math.round(scan.edibleConfidence * 100)}% edible confidence`
@@ -1764,9 +1799,34 @@ function ScanResultCard({ scan }: { scan: PlantScanResult }) {
       </View>
 
       <View className="mt-4 flex-row gap-3">
+        <MiniResult
+          label="Plant image"
+          value={scan.isPlantImage ? plantImageLabel : 'Retake'}
+        />
         <MiniResult label="Stage" value={scan.growthStage} />
-        <MiniResult label="Harvest" value={harvestLabel} />
       </View>
+      <View className="mt-3 flex-row gap-3">
+        <MiniResult label="Harvest" value={harvestLabel} />
+        <MiniResult label="ID" value={confidenceLabel} />
+      </View>
+
+      {!scan.isPlantImage || scan.retakeRecommended ? (
+        <View className="mt-4 rounded-2xl bg-[#FFF0C9] p-4">
+          <Text className="text-xs font-black uppercase text-[#8B741F]">
+            Retake guidance
+          </Text>
+          <View className="mt-2 gap-2">
+            {scan.qualityIssues.map((issue) => (
+              <Text
+                key={issue}
+                className="text-sm font-bold leading-5 text-[#6D4D0F]"
+              >
+                - {issue}
+              </Text>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       <View className="mt-4 rounded-2xl bg-[#F8F3E8] p-4">
         <Text className="text-xs font-black uppercase text-[#8B741F]">

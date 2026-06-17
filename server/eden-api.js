@@ -1,4 +1,5 @@
 const http = require('http');
+const jpeg = require('jpeg-js');
 
 const PORT = Number(process.env.PORT || 8787);
 
@@ -79,7 +80,44 @@ server.listen(PORT, () => {
   console.log(`Eden API mock listening on http://localhost:${PORT}`);
 });
 
-function scanPlant({ imageUri, plant }) {
+function scanPlant({ imageBase64, imageUri, plant }) {
+  const imageAssessment = assessPlantImage(imageBase64);
+  const isPlantImage = imageAssessment.confidence >= 0.22;
+
+  if (!isPlantImage) {
+    return {
+      id: `scan-${Date.now()}`,
+      plantId: plant?.id || 'unknown',
+      imageUri,
+      createdAt: new Date().toISOString(),
+      detectedName: 'No plant detected',
+      scientificName: 'Unknown',
+      confidence: 0.12,
+      confidenceLevel: 'low',
+      isPlantImage: false,
+      plantImageConfidence: imageAssessment.confidence,
+      edibleStatus: 'unknown',
+      edibleConfidence: 0,
+      harvestStatus: 'unknown',
+      daysUntilHarvestEstimate: null,
+      growthStage: 'Not assessed',
+      healthScore: Number(plant?.health || 0),
+      findings: [
+        'The image does not contain enough plant-like visual information.',
+        `Green leaf signal: ${Math.round(imageAssessment.greenRatio * 100)}%.`,
+      ],
+      careInstructions: [
+        'Retake the photo with one plant centered in frame.',
+        'Use natural light and include leaves, stems, flowers, or fruit.',
+        'Avoid scanning labels, pots, soil-only images, or dark/blurry photos.',
+      ],
+      safetyNote: 'Eden cannot identify or recommend recipes from this image.',
+      userConfirmationRequired: false,
+      qualityIssues: imageAssessment.qualityIssues,
+      retakeRecommended: true,
+    };
+  }
+
   const profile = knownPlants[String(plant?.name || '').toLowerCase()] || {
     detectedName: plant?.name || 'Unknown plant',
     scientificName: 'Needs confirmation',
@@ -102,6 +140,8 @@ function scanPlant({ imageUri, plant }) {
     scientificName: profile.scientificName,
     confidence: profile.confidence,
     confidenceLevel: highConfidence ? 'high' : profile.confidence >= 0.65 ? 'medium' : 'low',
+    isPlantImage: true,
+    plantImageConfidence: imageAssessment.confidence,
     edibleStatus: profile.edibleStatus,
     edibleConfidence: profile.edibleConfidence,
     harvestStatus: profile.harvestStatus,
@@ -111,6 +151,7 @@ function scanPlant({ imageUri, plant }) {
     findings: [
       'Leaf color appears mostly even.',
       'No obvious pest pattern detected in the visible area.',
+      `Plant image signal: ${Math.round(imageAssessment.confidence * 100)}%.`,
       highConfidence ? 'Image quality is acceptable for this scan.' : 'Image quality may limit identification.',
     ],
     careInstructions: buildCareInstructions(plant, profile.harvestStatus),
@@ -119,15 +160,94 @@ function scanPlant({ imageUri, plant }) {
         ? 'Confirm growing conditions before eating any harvest.'
         : 'Do not eat this plant from AI identification alone. Confirm identity and edible parts first.',
     userConfirmationRequired: false,
-    qualityIssues: highConfidence
+    qualityIssues: highConfidence && imageAssessment.qualityIssues.length === 0
       ? []
-      : ['Move closer to the leaves or fruit.', 'Use natural light.', 'Center one plant in frame.'],
-    retakeRecommended: !highConfidence,
+      : [...imageAssessment.qualityIssues, 'Move closer to the leaves or fruit.', 'Center one plant in frame.'],
+    retakeRecommended: !highConfidence || imageAssessment.confidence < 0.35,
   };
+}
+
+function assessPlantImage(imageBase64) {
+  if (!imageBase64) {
+    return {
+      confidence: 0.3,
+      greenRatio: 0.2,
+      qualityIssues: ['Image data was not available for plant-image precheck.'],
+    };
+  }
+
+  try {
+    const cleanBase64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '');
+    const raw = Buffer.from(cleanBase64, 'base64');
+    const decoded = jpeg.decode(raw, { useTArray: true });
+    const { data, height, width } = decoded;
+    const stride = Math.max(1, Math.floor((width * height) / 18000));
+    let sampled = 0;
+    let greenPixels = 0;
+    let saturatedPixels = 0;
+    let veryDarkPixels = 0;
+
+    for (let pixel = 0; pixel < width * height; pixel += stride) {
+      const offset = pixel * 4;
+      const red = data[offset];
+      const green = data[offset + 1];
+      const blue = data[offset + 2];
+      const max = Math.max(red, green, blue);
+      const min = Math.min(red, green, blue);
+      const saturation = max === 0 ? 0 : (max - min) / max;
+      const brightness = (red + green + blue) / 3;
+      const greenDominant = green > red * 1.08 && green > blue * 1.08;
+      const leafLike = greenDominant && saturation > 0.18 && brightness > 35;
+
+      sampled += 1;
+
+      if (leafLike) {
+        greenPixels += 1;
+      }
+
+      if (saturation > 0.2) {
+        saturatedPixels += 1;
+      }
+
+      if (brightness < 28) {
+        veryDarkPixels += 1;
+      }
+    }
+
+    const greenRatio = sampled ? greenPixels / sampled : 0;
+    const saturationRatio = sampled ? saturatedPixels / sampled : 0;
+    const darkRatio = sampled ? veryDarkPixels / sampled : 0;
+    const confidence = Math.max(
+      0,
+      Math.min(0.99, greenRatio * 1.8 + saturationRatio * 0.25 - darkRatio * 0.35),
+    );
+    const qualityIssues = [];
+
+    if (greenRatio < 0.12) {
+      qualityIssues.push('Not enough visible green leaf or stem area.');
+    }
+
+    if (darkRatio > 0.35) {
+      qualityIssues.push('The image looks too dark for a reliable scan.');
+    }
+
+    if (saturationRatio < 0.18) {
+      qualityIssues.push('The image may be blurry, washed out, or low contrast.');
+    }
+
+    return { confidence, greenRatio, qualityIssues };
+  } catch {
+    return {
+      confidence: 0.18,
+      greenRatio: 0,
+      qualityIssues: ['Eden could not decode this image. Retake the photo.'],
+    };
+  }
 }
 
 function recommendRecipes({ plant, scan }) {
   if (
+    scan?.isPlantImage !== true ||
     scan?.edibleStatus !== 'edible' ||
     scan?.confidence < 0.9 ||
     scan?.edibleConfidence < 0.85 ||

@@ -40,6 +40,8 @@ Output:
     "scientificName": "Ocimum basilicum",
     "confidence": 0.96,
     "confidenceLevel": "high",
+    "isPlantImage": true,
+    "plantImageConfidence": 0.91,
     "edibleStatus": "edible",
     "edibleConfidence": 0.94,
     "harvestStatus": "ready",
@@ -49,13 +51,17 @@ Output:
     "findings": ["Leaf color appears mostly even."],
     "careInstructions": ["Harvest a small amount and leave enough growth for recovery."],
     "safetyNote": "Confirm growing conditions before eating.",
-    "userConfirmationRequired": false
+    "userConfirmationRequired": false,
+    "qualityIssues": [],
+    "retakeRecommended": false
   }
 }
 ```
 
 Accuracy rules:
 
+- First determine whether the scan image appears to contain a plant.
+- If `isPlantImage` is `false`, return `detectedName: "No plant detected"`, exact retake guidance, and no recipes.
 - Return `confidenceLevel: "low"` when identification is uncertain.
 - Return `harvestStatus: "not_ready"` for edible crops that are not fully grown.
 - Never unlock recipes unless `confidence >= 0.9`, `edibleConfidence >= 0.85`, and `harvestStatus === "ready"`.

@@ -2,6 +2,7 @@ import { analyzePlantImage, recommendRecipes } from '../services/edenAi';
 import type { Plant, PlantScanResult, RecipeRecommendation } from '../types';
 
 export type ScanPlantRequest = {
+  imageBase64?: string;
   imageUri: string;
   plant: Plant;
 };

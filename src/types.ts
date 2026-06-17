@@ -55,6 +55,8 @@ export type PlantScanResult = {
   scientificName: string;
   confidence: number;
   confidenceLevel: ConfidenceLevel;
+  isPlantImage: boolean;
+  plantImageConfidence: number;
   edibleStatus: 'edible' | 'not_edible' | 'unknown';
   edibleConfidence: number;
   harvestStatus: 'ready' | 'not_ready' | 'unknown';
