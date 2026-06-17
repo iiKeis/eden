@@ -19,7 +19,11 @@ import {
   plants as seedPlants,
   rewards,
 } from './src/data/edenData';
-import { getRecipeRecommendations, scanPlant } from './src/api/edenBackend';
+import {
+  getConfiguredApiBaseUrl,
+  getRecipeRecommendations,
+  scanPlant,
+} from './src/api/edenBackend';
 import { canAwardScanXp, rewardPolicy } from './src/services/rewards';
 import type {
   CareEntry,
@@ -1227,6 +1231,18 @@ function ProfileScreen({
           {plants.length} plants and {scans.length} AI scans are saved on this
           device. Next step is replacing local storage with accounts and cloud
           sync.
+        </Text>
+      </View>
+      <View className="mt-4 rounded-3xl border border-[#E2D8C2] bg-[#FFFDF7] p-5">
+        <Text className="text-xs font-black uppercase text-[#8B741F]">
+          Scan backend
+        </Text>
+        <Text className="mt-2 text-base font-black text-[#183B27]">
+          {getConfiguredApiBaseUrl()}
+        </Text>
+        <Text className="mt-2 text-sm font-bold leading-5 text-[#756D5D]">
+          Real photo scans require the backend so Eden does not fake plant
+          identification when the API is unreachable.
         </Text>
       </View>
       <SecondaryAction label="Reset demo data" onPress={onReset} />

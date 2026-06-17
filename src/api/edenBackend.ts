@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { analyzePlantImage, recommendRecipes } from '../services/edenAi';
 import type { Plant, PlantScanResult, RecipeRecommendation } from '../types';
 
@@ -27,6 +28,12 @@ export async function scanPlant(
 
   if (remote) {
     return remote;
+  }
+
+  if (request.imageBase64) {
+    return {
+      scan: createUnavailableScan(request),
+    };
   }
 
   const scan = await analyzePlantImage(request);
@@ -78,6 +85,56 @@ function getApiBaseUrl() {
   const maybeProcess = globalThis as typeof globalThis & {
     process?: { env?: Record<string, string | undefined> };
   };
+  const envUrl = maybeProcess.process?.env?.EXPO_PUBLIC_EDEN_API_URL?.replace(
+    /\/$/,
+    '',
+  );
 
-  return maybeProcess.process?.env?.EXPO_PUBLIC_EDEN_API_URL?.replace(/\/$/, '');
+  if (envUrl) {
+    return envUrl;
+  }
+
+  const hostUri = Constants.expoConfig?.hostUri;
+  const host = hostUri?.split(':')[0];
+
+  if (host && host !== '127.0.0.1' && host !== 'localhost') {
+    return `http://${host}:8787`;
+  }
+
+  return undefined;
+}
+
+export function getConfiguredApiBaseUrl() {
+  return getApiBaseUrl() ?? 'local fallback only';
+}
+
+function createUnavailableScan(request: ScanPlantRequest): PlantScanResult {
+  return {
+    id: `scan-unavailable-${Date.now()}`,
+    plantId: request.plant.id,
+    imageUri: request.imageUri,
+    createdAt: new Date().toISOString(),
+    detectedName: 'Scan unavailable',
+    scientificName: 'Backend required',
+    confidence: 0,
+    confidenceLevel: 'low',
+    isPlantImage: false,
+    plantImageConfidence: 0,
+    edibleStatus: 'unknown',
+    edibleConfidence: 0,
+    harvestStatus: 'unknown',
+    daysUntilHarvestEstimate: null,
+    growthStage: 'Not assessed',
+    healthScore: request.plant.health,
+    findings: ['Eden could not reach the scan backend for this photo.'],
+    careInstructions: [
+      'Make sure the Eden API is running.',
+      'Use LAN or tunnel mode so your phone can reach the backend.',
+      'Retake or resubmit the photo after the backend is reachable.',
+    ],
+    safetyNote: 'No plant identification or recipe recommendation was made.',
+    userConfirmationRequired: false,
+    qualityIssues: ['Scan backend unavailable.'],
+    retakeRecommended: true,
+  };
 }
